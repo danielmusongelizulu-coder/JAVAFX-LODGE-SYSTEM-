@@ -25,6 +25,18 @@ public class Reservation {
         this.notes = notes;
     }
 
+    public Reservation(String reservationId, String guestName, String roomType, String checkIn,
+                       int nights, String notes, String status, LocalDateTime checkedInAt,
+                       LocalDateTime checkedOutAt) {
+        this(reservationId, guestName, roomType, checkIn, nights, notes);
+        if (!"Confirmed".equals(status) && !"Checked In".equals(status) && !"Checked Out".equals(status)) {
+            throw new IllegalArgumentException("Unsupported reservation status: " + status);
+        }
+        this.status = status;
+        this.checkedInAt = checkedInAt;
+        this.checkedOutAt = checkedOutAt;
+    }
+
     public String getReservationId() {
         return reservationId;
     }
@@ -59,6 +71,14 @@ public class Reservation {
 
     public String getCheckedOutAt() {
         return formatEventTime(checkedOutAt);
+    }
+
+    public LocalDateTime getCheckedInTime() {
+        return checkedInAt;
+    }
+
+    public LocalDateTime getCheckedOutTime() {
+        return checkedOutAt;
     }
 
     public boolean isConfirmed() {

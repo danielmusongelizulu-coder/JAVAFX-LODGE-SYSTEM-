@@ -378,3 +378,109 @@
     -fx-padding: 10px 14px;
     -fx-effect: dropshadow(gaussian, rgba(113, 76, 34, 0.16), 12, 0, 0, 4);
 }
+
+.auth-card {
+    -fx-padding: 34px;
+    -fx-spacing: 20px;
+    -fx-background-color: linear-gradient(to bottom right, #ffffff, #f1fbf4 68%, #e6f5ed);
+    -fx-border-color: #8bc7a2;
+}
+
+.dashboard-nav {
+    -fx-background-color: linear-gradient(to bottom, #174f3b, #126b60 72%, #236c70);
+    -fx-border-color: rgba(255, 255, 255, 0.35);
+    -fx-border-width: 0 1px 0 0;
+}
+
+.nav-heading {
+    -fx-text-fill: #d8e9d9;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-padding: 4px 8px 10px 8px;
+}
+
+.nav-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: #f4ffed;
+    -fx-font-weight: bold;
+    -fx-alignment: CENTER_LEFT;
+    -fx-max-width: 10000px;
+    -fx-padding: 11px 12px;
+    -fx-background-radius: 9px;
+    -fx-cursor: hand;
+}
+
+.nav-button:hover {
+    -fx-background-color: rgba(255, 255, 255, 0.16);
+    -fx-text-fill: #ffe2a1;
+}
+
+.account-badge {
+    -fx-background-color: #e8f5e9;
+    -fx-text-fill: #23633a;
+    -fx-font-weight: bold;
+    -fx-padding: 8px 12px;
+    -fx-background-radius: 16px;
+}
+
+.welcome-card {
+    -fx-background-color: linear-gradient(to right, #176b4f, #16868a 65%, #28719a);
+    -fx-border-color: #e7b85c;
+    -fx-padding: 26px;
+}
+
+.welcome-card .welcome-title {
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 27px;
+    -fx-font-weight: bold;
+}
+
+.welcome-card .label-sub {
+    -fx-text-fill: #e3f5ea;
+    -fx-font-size: 14px;
+}
+
+.metric-card {
+    -fx-padding: 20px;
+    -fx-background-color: linear-gradient(to bottom right, #ffffff, #e8f8ec);
+    -fx-border-color: #8bc7a2;
+}
+
+.metric-caption {
+    -fx-text-fill: #547866;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+}
+
+.metric-value {
+    -fx-text-fill: #176b4f;
+    -fx-font-size: 25px;
+    -fx-font-weight: bold;
+}
+
+.auth-tabs .tab-header-area .tab-header-background {
+    -fx-background-color: transparent;
+}
+
+.auth-tabs .tab {
+    -fx-background-color: #e9f4eb;
+    -fx-background-radius: 9px 9px 0 0;
+    -fx-padding: 9px 12px;
+}
+
+.auth-tabs .tab .tab-label {
+    -fx-text-fill: #547866;
+    -fx-font-weight: bold;
+}
+
+.auth-tabs .tab:selected {
+    -fx-background-color: linear-gradient(to right, #176b4f, #16868a);
+}
+
+.auth-tabs .tab:selected .tab-label {
+    -fx-text-fill: #ffffff;
+}
+
+.auth-tabs .tab-content-area {
+    -fx-background-color: transparent;
+}

@@ -1,11 +1,11 @@
 public class Bill {
-    private String billId;
-    private String guestName;
-    private String roomType;
-    private int nights;
-    private double total;
-    private double paid;
-    private double balance;
+    private final String billId;
+    private final String guestName;
+    private final String roomType;
+    private final int nights;
+    private final double total;
+    private final double paid;
+    private final double balance;
 
     public Bill(String billId, String guestName, String roomType, int nights, double total, double paid, double balance) {
         this.billId = billId;
@@ -24,4 +24,7 @@ public class Bill {
     public String getTotal() { return String.format("K %.2f", total); }
     public String getPaid() { return String.format("K %.2f", paid); }
     public String getBalance() { return String.format("K %.2f", balance); }
+    public double getTotalAmount() { return total; }
+    public double getPaidAmount() { return paid; }
+    public double getBalanceAmount() { return balance; }
 }

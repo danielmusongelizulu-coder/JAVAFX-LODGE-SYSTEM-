@@ -13,18 +13,28 @@ import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import javafx.scene.shape.Ellipse;
+import javafx.scene.control.Alert.AlertType;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 import javafx.animation.Interpolator;
+import javafx.beans.property.ReadOnlyIntegerWrapper;
+import javafx.beans.property.ReadOnlyStringWrapper;
 
+import java.io.IOException;
+import java.security.GeneralSecurityException;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 
 public class LodgeBillingApp extends Application {
 
     private final ObservableList<Bill> billList = FXCollections.observableArrayList();
     private final ObservableList<Reservation> reservationList = FXCollections.observableArrayList();
-    private int billCounter = 3;
+    private final LocalUserStore userStore = new LocalUserStore();
+    private final LocalLodgeStore lodgeStore = new LocalLodgeStore();
+    private int billCounter = 0;
     private int reservationCounter = 0;
     private RotateTransition logoRotation;
 
@@ -34,7 +44,46 @@ public class LodgeBillingApp extends Application {
     @Override
     public void start(Stage primaryStage) {
         primaryStage.setTitle("MUZU Lodge");
+        try {
+            lodgeStore.load(billList, reservationList);
+            billCounter = highestIdNumber(billList.stream().map(Bill::getBillId).toList(), "B");
+            reservationCounter = highestIdNumber(
+                    reservationList.stream().map(Reservation::getReservationId).toList(), "R");
+        } catch (IOException | RuntimeException ex) {
+            Alert error = new Alert(AlertType.ERROR);
+            error.setTitle("Unable to load lodge records");
+            error.setHeaderText("The local lodge data could not be read.");
+            error.setContentText(ex.getMessage());
+            error.showAndWait();
+            primaryStage.close();
+            return;
+        }
         showLoginScreen(primaryStage);
+    }
+
+    private int highestIdNumber(java.util.List<String> ids, String prefix) {
+        return ids.stream()
+                .filter(id -> id != null && id.startsWith(prefix))
+                .map(id -> id.substring(prefix.length()))
+                .filter(number -> number.matches("\\d+"))
+                .mapToInt(Integer::parseInt)
+                .max().orElse(0);
+    }
+
+    private boolean persistRecords(Stage owner, Label statusLabel) {
+        try {
+            lodgeStore.save(billList, reservationList);
+            return true;
+        } catch (IOException ex) {
+            setStatus(statusLabel, "Record changed in memory but could not be saved locally.", false);
+            Alert error = new Alert(AlertType.ERROR);
+            error.initOwner(owner);
+            error.setTitle("Unable to save lodge records");
+            error.setHeaderText("Your latest changes were not saved to this computer.");
+            error.setContentText(ex.getMessage());
+            error.showAndWait();
+            return false;
+        }
     }
 
     private DropShadow createShadow() {
@@ -88,65 +137,265 @@ public class LodgeBillingApp extends Application {
 
     private void showLoginScreen(Stage stage) {
         stopLogoRotation();
+        stage.setTitle("MUZU Lodge | Welcome");
 
-        VBox card = new VBox(22);
-        card.getStyleClass().add("card");
+        VBox card = new VBox(18);
+        card.getStyleClass().addAll("card", "auth-card");
         card.setEffect(createShadow());
-        card.setMaxWidth(420);
-        card.setAlignment(Pos.CENTER);
+        card.setMaxWidth(470);
 
-        HBox brand = createBrand(64);
+        HBox brand = createBrand(66);
         brand.setAlignment(Pos.CENTER);
-        Label subLabel = new Label("Welcome back. Sign in to manage your lodge.");
-        subLabel.getStyleClass().add("label-sub");
+        Label intro = new Label("A more personal stay starts here.");
+        intro.getStyleClass().add("label-sub");
+        intro.setMaxWidth(Double.MAX_VALUE);
+        intro.setAlignment(Pos.CENTER);
 
-        GridPane grid = new GridPane();
-        grid.setHgap(10);
-        grid.setVgap(14);
-        grid.setAlignment(Pos.CENTER);
+        Tab guestTab = new Tab("Guest login");
+        Tab createTab = new Tab("Create account");
+        Tab adminTab = new Tab("Admin login");
+        TabPane modes = new TabPane(guestTab, createTab, adminTab);
+        modes.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        modes.getStyleClass().add("auth-tabs");
 
         TextField userField = new TextField();
         userField.setPromptText("Username");
-        userField.setPrefWidth(270);
         PasswordField passField = new PasswordField();
         passField.setPromptText("Password");
-        passField.setPrefWidth(270);
+        GridPane fields = new GridPane();
+        fields.setVgap(11);
+        fields.add(userField, 0, 0);
+        fields.add(passField, 0, 1);
+        for (javafx.scene.Node node : fields.getChildren()) {
+            GridPane.setHgrow(node, Priority.ALWAYS);
+            if (node instanceof Region region) {
+                region.setMaxWidth(Double.MAX_VALUE);
+            }
+        }
 
-        grid.add(new Label("Username"), 0, 0);
-        grid.add(userField, 0, 1);
-        grid.add(new Label("Password"), 0, 2);
-        grid.add(passField, 0, 3);
+        Button submitButton = new Button("Sign in to your account");
+        submitButton.setDefaultButton(true);
+        submitButton.getStyleClass().add("button-primary");
+        submitButton.setMaxWidth(Double.MAX_VALUE);
+        Label feedback = new Label();
+        feedback.setWrapText(true);
+        feedback.setStyle("-fx-text-fill: #B34436; -fx-font-size: 12px;");
 
-        Button loginButton = new Button("Sign in to MUZU Lodge");
-        loginButton.setDefaultButton(true);
-        loginButton.getStyleClass().add("button-primary");
-        loginButton.setMaxWidth(Double.MAX_VALUE);
-        Label errorLabel = new Label();
-        errorLabel.setStyle("-fx-text-fill: #B34436; -fx-font-size: 12px;");
+        Runnable updateMode = () -> {
+            boolean creatingAccount = modes.getSelectionModel().getSelectedItem() == createTab;
+            boolean adminLogin = modes.getSelectionModel().getSelectedItem() == adminTab;
+            submitButton.setText(creatingAccount ? "Create your account"
+                    : adminLogin ? "Sign in to admin console" : "Sign in to your account");
+            intro.setText(creatingAccount ? "Create your personal MUZU Lodge account."
+                    : adminLogin ? "Secure access to your lodge operations."
+                    : "Welcome back. Your stay, all in one place.");
+            feedback.setText("");
+            feedback.setStyle("-fx-text-fill: #B34436; -fx-font-size: 12px;");
+        };
+        modes.getSelectionModel().selectedItemProperty()
+                .addListener((observable, oldTab, selectedTab) -> updateMode.run());
 
-        loginButton.setOnAction(e -> {
+        submitButton.setOnAction(event -> {
             String username = userField.getText().trim();
-            String password = passField.getText().trim();
-            if (username.equals("admin") && password.equals("1234")) {
-                showMainLabScreen(stage);
-            } else if (username.isEmpty() || password.isEmpty()) {
-                errorLabel.setText("Please fill in both fields.");
-            } else {
-                errorLabel.setText("Invalid credentials. Try admin / 1234.");
+            char[] password = passField.getText().toCharArray();
+            try {
+                if (modes.getSelectionModel().getSelectedItem() == createTab) {
+                    if (!username.matches("(?i)[a-z0-9][a-z0-9._-]{0,31}") || username.equalsIgnoreCase("admin")) {
+                        feedback.setText("Choose a username using letters, numbers, dots, _ or - (up to 32 characters).");
+                    } else if (password.length == 0) {
+                        feedback.setText("Choose a password.");
+                    } else {
+                        userStore.register(username, password);
+                        userField.setText(username);
+                        passField.clear();
+                        modes.getSelectionModel().select(guestTab);
+                        feedback.setText("Account created on this computer. Sign in to continue.");
+                        feedback.setStyle("-fx-text-fill: #237244; -fx-font-size: 12px;");
+                    }
+                } else if (username.isBlank() || password.length == 0) {
+                    feedback.setText("Enter your username and password.");
+                } else if (modes.getSelectionModel().getSelectedItem() == adminTab) {
+                    if (username.equals("admin") && passField.getText().equals("1234")) {
+                        showMainLabScreen(stage);
+                    } else {
+                        feedback.setText("Admin credentials are not valid.");
+                    }
+                } else {
+                    LocalUserStore.Account account = userStore.authenticate(username, password);
+                    if (account == null) {
+                        feedback.setText("We couldn't find an account with those credentials.");
+                    } else {
+                        showUserDashboard(stage, account);
+                    }
+                }
+            } catch (IllegalArgumentException ex) {
+                feedback.setText(ex.getMessage());
+            } catch (IOException | GeneralSecurityException ex) {
+                feedback.setText("We couldn't access the local account store: " + ex.getMessage());
+            } finally {
+                java.util.Arrays.fill(password, '\0');
             }
         });
 
-        card.getChildren().addAll(brand, subLabel, grid, loginButton, errorLabel);
+        card.getChildren().addAll(brand, intro, modes, fields, submitButton, feedback);
         StackPane container = new StackPane(card);
-        container.setPadding(new Insets(40));
+        container.setPadding(new Insets(36));
 
-        Scene loginScene = new Scene(container, 520, 560);
+        Scene loginScene = new Scene(container, 580, 670);
         loginScene.getStylesheets().add(STYLESHEET);
         stage.setScene(loginScene);
+        stage.setMinWidth(520);
+        stage.setMinHeight(620);
         stage.show();
     }
 
-    private void showMainLabScreen(Stage stage) {
+    private VBox createMetricCard(String title, String value, String caption) {
+        Label titleLabel = new Label(title.toUpperCase(Locale.ROOT));
+        titleLabel.getStyleClass().add("metric-caption");
+        Label valueLabel = new Label(value);
+        valueLabel.getStyleClass().add("metric-value");
+        Label detailLabel = new Label(caption);
+        detailLabel.getStyleClass().add("label-sub");
+        VBox card = new VBox(8, titleLabel, valueLabel, detailLabel);
+        card.getStyleClass().addAll("card", "metric-card");
+        HBox.setHgrow(card, Priority.ALWAYS);
+        return card;
+    }
+
+    private void showUserDashboard(Stage stage, LocalUserStore.Account account) {
+        stopLogoRotation();
+        stage.setTitle("MUZU Lodge | Guest dashboard");
+
+        String guestName = account.username();
+        ObservableList<Bill> guestBills = FXCollections.observableArrayList(
+                billList.stream()
+                        .filter(bill -> belongsToAccount(bill.getGuestName(), account))
+                        .toList());
+        ObservableList<Reservation> guestReservations = FXCollections.observableArrayList(
+                reservationList.stream()
+                        .filter(reservation -> belongsToAccount(reservation.getGuestName(), account))
+                        .toList());
+
+        HBox brand = createBrand(58);
+        Label accountBadge = new Label("GUEST ACCOUNT");
+        accountBadge.getStyleClass().add("account-badge");
+        Button logoutButton = new Button("Log out");
+        logoutButton.getStyleClass().add("button-secondary");
+        logoutButton.setOnAction(event -> showLoginScreen(stage));
+        Region headerSpacer = new Region();
+        HBox.setHgrow(headerSpacer, Priority.ALWAYS);
+        HBox header = new HBox(18, brand, headerSpacer, accountBadge, logoutButton);
+        header.getStyleClass().add("dashboard-header");
+        header.setAlignment(Pos.CENTER_LEFT);
+        header.setPadding(new Insets(12, 18, 12, 18));
+
+        Label welcome = new Label("Welcome, " + guestName);
+        welcome.getStyleClass().add("welcome-title");
+        Label welcomeSubtitle = new Label("Your MUZU Lodge stay, thoughtfully brought together.");
+        welcomeSubtitle.getStyleClass().add("label-sub");
+        VBox welcomeCard = new VBox(9, welcome, welcomeSubtitle);
+        welcomeCard.getStyleClass().addAll("card", "welcome-card");
+
+        double outstanding = guestBills.stream().mapToDouble(Bill::getBalanceAmount).sum();
+        HBox metrics = new HBox(14,
+                createMetricCard("Your bills", Integer.toString(guestBills.size()), "Receipts ready to view"),
+                createMetricCard("Reservations", Integer.toString(guestReservations.size()), "Your stays with us"),
+                createMetricCard("Outstanding", String.format("K %.2f", outstanding), "Current balance due"));
+
+        Label billsHeading = new Label("Your billing & receipts");
+        billsHeading.getStyleClass().add("section-title");
+        TableView<Bill> billsTable = new TableView<>(guestBills);
+        billsTable.setPlaceholder(new Label("No bills are linked to your account yet."));
+        billsTable.getColumns().add(tableColumn("Bill ID", "billId"));
+        billsTable.getColumns().add(tableColumn("Room", "roomType"));
+        billsTable.getColumns().add(tableColumn("Nights", "nights"));
+        billsTable.getColumns().add(tableColumn("Total", "total"));
+        billsTable.getColumns().add(tableColumn("Paid", "paid"));
+        billsTable.getColumns().add(tableColumn("Balance due", "balance"));
+        billsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        billsTable.setPrefHeight(240);
+        billsTable.setRowFactory(table -> {
+            TableRow<Bill> row = new TableRow<>();
+            row.setOnMouseClicked(event -> {
+                if (event.getClickCount() == 2 && !row.isEmpty()) {
+                    showReceipt(stage, row.getItem());
+                }
+            });
+            return row;
+        });
+        Button receiptButton = new Button("View receipt");
+        receiptButton.getStyleClass().add("button-primary");
+        receiptButton.disableProperty().bind(billsTable.getSelectionModel().selectedItemProperty().isNull());
+        receiptButton.setOnAction(event ->
+                showReceipt(stage, billsTable.getSelectionModel().getSelectedItem()));
+        HBox billActions = new HBox(receiptButton);
+        billActions.setAlignment(Pos.CENTER_RIGHT);
+        VBox billsSection = new VBox(12, billsHeading, billsTable, billActions);
+        billsSection.setId("guest-bills");
+        billsSection.getStyleClass().addAll("card", "bill-card");
+
+        Label reservationsHeading = new Label("Your reservations");
+        reservationsHeading.getStyleClass().add("section-title");
+        TableView<Reservation> reservationsTable = new TableView<>(guestReservations);
+        reservationsTable.setPlaceholder(new Label("No reservations are linked to your account yet."));
+        reservationsTable.getColumns().add(tableColumn("Reservation", "reservationId"));
+        reservationsTable.getColumns().add(tableColumn("Room", "roomType"));
+        reservationsTable.getColumns().add(tableColumn("Check-in", "checkIn"));
+        reservationsTable.getColumns().add(tableColumn("Nights", "nights"));
+        reservationsTable.getColumns().add(tableColumn("Status", "status"));
+        reservationsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        reservationsTable.setPrefHeight(220);
+        VBox reservationsSection = new VBox(12, reservationsHeading, reservationsTable);
+        reservationsSection.setId("guest-reservations");
+        reservationsSection.getStyleClass().addAll("card", "reservation-card");
+
+        Button billsLink = new Button("My bills");
+        Button reservationsLink = new Button("My reservations");
+        billsLink.getStyleClass().add("nav-button");
+        reservationsLink.getStyleClass().add("nav-button");
+        VBox content = new VBox(18, header, welcomeCard, metrics, billsSection, reservationsSection);
+        content.setPadding(new Insets(22));
+        ScrollPane scrollPane = new ScrollPane(content);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        billsLink.setOnAction(event -> scrollToSection(scrollPane, content, billsSection));
+        reservationsLink.setOnAction(event -> scrollToSection(scrollPane, content, reservationsSection));
+
+        Label guestNavTitle = new Label("YOUR STAY");
+        guestNavTitle.getStyleClass().add("nav-heading");
+        VBox navigation = new VBox(9, guestNavTitle, billsLink, reservationsLink);
+        navigation.getStyleClass().add("dashboard-nav");
+        navigation.setPadding(new Insets(22, 12, 12, 12));
+        navigation.setMinWidth(180);
+        navigation.setMaxWidth(195);
+        HBox workspace = new HBox(navigation, scrollPane);
+        HBox.setHgrow(scrollPane, Priority.ALWAYS);
+        VBox layout = new VBox(workspace);
+        layout.getStyleClass().add("dashboard-shell");
+        VBox.setVgrow(workspace, Priority.ALWAYS);
+
+        Scene scene = new Scene(layout, 1180, 820);
+        scene.getStylesheets().add(STYLESHEET);
+        stage.setMinWidth(860);
+        stage.setMinHeight(650);
+        stage.setScene(scene);
+        stage.show();
+    }
+
+    private <T> TableColumn<T, Object> tableColumn(String title, String property) {
+        TableColumn<T, Object> column = new TableColumn<>(title);
+        column.setCellValueFactory(new PropertyValueFactory<>(property));
+        return column;
+    }
+
+    private void scrollToSection(ScrollPane scrollPane, VBox content, Region section) {
+        double scrollableHeight = content.getHeight() - scrollPane.getViewportBounds().getHeight();
+        if (scrollableHeight > 0) {
+            scrollPane.setVvalue(Math.min(1, section.getLayoutY() / scrollableHeight));
+        }
+    }
+
+    private void showMainLabScreen(Stage stage) throws IOException {
         stopLogoRotation();
         stage.setTitle("MUZU Lodge | Admin Dashboard");
 
@@ -155,6 +404,7 @@ public class LodgeBillingApp extends Application {
         MenuItem newGuestItem = new MenuItem("New Guest");
         MenuItem logoutItem = new MenuItem("Logout");
         fileMenu.getItems().addAll(newGuestItem, new SeparatorMenuItem(), logoutItem);
+        logoutItem.setOnAction(e -> showLoginScreen(stage));
         Menu helpMenu = new Menu("Help");
         MenuItem aboutItem = new MenuItem("About MUZU Lodge");
         helpMenu.getItems().add(aboutItem);
@@ -162,10 +412,13 @@ public class LodgeBillingApp extends Application {
 
         HBox brand = createBrand(54);
         Label adminBadge = new Label("ADMIN CONSOLE");
-        adminBadge.setStyle("-fx-background-color: #E9F2E9; -fx-text-fill: #23633A; -fx-font-weight: bold; -fx-padding: 8px 12px; -fx-background-radius: 16px;");
+        adminBadge.getStyleClass().add("account-badge");
+        Button logoutButton = new Button("Log out");
+        logoutButton.getStyleClass().add("button-secondary");
+        logoutButton.setOnAction(e -> showLoginScreen(stage));
         Region headerSpacer = new Region();
         HBox.setHgrow(headerSpacer, Priority.ALWAYS);
-        HBox headerBox = new HBox(brand, headerSpacer, adminBadge);
+        HBox headerBox = new HBox(brand, headerSpacer, adminBadge, logoutButton);
         headerBox.getStyleClass().add("dashboard-header");
         headerBox.setAlignment(Pos.CENTER_LEFT);
         headerBox.setPadding(new Insets(12, 18, 12, 18));
@@ -186,7 +439,7 @@ public class LodgeBillingApp extends Application {
         formGrid.getColumnConstraints().addAll(labels, inputs);
 
         TextField guestNameField = new TextField();
-        guestNameField.setPromptText("Guest full name");
+        guestNameField.setPromptText("Guest name or registered username");
         ComboBox<String> roomTypeBox = new ComboBox<>();
         roomTypeBox.getItems().addAll("Standard", "Deluxe", "Family");
         roomTypeBox.setValue("Standard");
@@ -200,7 +453,7 @@ public class LodgeBillingApp extends Application {
         notesArea.setPromptText("Special requests or reservation notes");
         notesArea.setPrefRowCount(2);
 
-        formGrid.add(new Label("Guest name"), 0, 0);
+        formGrid.add(new Label("Guest / username"), 0, 0);
         formGrid.add(guestNameField, 1, 0);
         formGrid.add(new Label("Room type"), 0, 1);
         formGrid.add(roomTypeBox, 1, 1);
@@ -226,12 +479,13 @@ public class LodgeBillingApp extends Application {
         Label pricesText = new Label("Standard     K 350 / night\nDeluxe         K 550 / night\nFamily          K 750 / night");
         pricesText.setStyle("-fx-line-spacing: 7px; -fx-text-fill: #425747; -fx-font-size: 13px;");
         Separator sep = new Separator();
-        Label rulesText = new Label("5+ nights: 5% off room charge\nExtras are not discounted.\n\nReservations added here are managed by the admin. Bills and reservations remain available for this session.");
+        Label rulesText = new Label("5+ nights: 5% off room charge\nExtras are not discounted.\n\nUse a guest's registered username to link bills and reservations to their account and receipts.\n\nRecords are saved locally on this computer.");
         rulesText.getStyleClass().add("label-sub");
         rulesText.setWrapText(true);
         infoCard.getChildren().addAll(infoTitle, pricesText, sep, rulesText);
 
         HBox topSection = new HBox(18, formCard, infoCard);
+        topSection.setId("admin-overview");
         HBox.setHgrow(formCard, Priority.ALWAYS);
 
         Button calculateButton = new Button("Preview total");
@@ -350,10 +604,41 @@ public class LodgeBillingApp extends Application {
         reservationCard.getStyleClass().addAll("card", "reservation-card");
         reservationCard.setEffect(createShadow());
 
-        if (billList.isEmpty()) {
-            billList.add(new Bill("B002", "Mary Banda", "Standard", 2, 800.00, 500.00, 300.00));
-            billList.add(new Bill("B003", "John Phiri", "Deluxe", 5, 2812.50, 1000.00, 1812.50));
-        }
+        ObservableList<LocalUserStore.Account> accounts = FXCollections.observableArrayList(userStore.listAccounts());
+        TableView<LocalUserStore.Account> accountsTable = new TableView<>(accounts);
+        accountsTable.setPlaceholder(new Label("No guest accounts have been created yet."));
+        TableColumn<LocalUserStore.Account, String> usernameColumn = new TableColumn<>("Username");
+        usernameColumn.setCellValueFactory(cell ->
+                new ReadOnlyStringWrapper(cell.getValue().username()));
+        TableColumn<LocalUserStore.Account, Integer> accountBillsColumn = new TableColumn<>("Bills");
+        accountBillsColumn.setCellValueFactory(cell -> new ReadOnlyIntegerWrapper(
+                countBillsForAccount(cell.getValue())).asObject());
+        TableColumn<LocalUserStore.Account, Integer> accountReservationsColumn =
+                new TableColumn<>("Reservations");
+        accountReservationsColumn.setCellValueFactory(cell -> new ReadOnlyIntegerWrapper(
+                countReservationsForAccount(cell.getValue())).asObject());
+        accountsTable.getColumns().add(usernameColumn);
+        accountsTable.getColumns().add(accountBillsColumn);
+        accountsTable.getColumns().add(accountReservationsColumn);
+        accountsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        accountsTable.setPrefHeight(230);
+
+        Label accountsHeading = new Label("Manage accounts");
+        accountsHeading.getStyleClass().add("section-title");
+        Label accountHelp = new Label(
+                "Deleting an account also permanently deletes its linked bills and reservations.");
+        accountHelp.getStyleClass().add("label-sub");
+        accountHelp.setWrapText(true);
+        Button deleteAccountButton = new Button("Delete account and data");
+        deleteAccountButton.getStyleClass().add("button-danger");
+        deleteAccountButton.disableProperty().bind(
+                accountsTable.getSelectionModel().selectedItemProperty().isNull());
+        HBox accountActions = new HBox(deleteAccountButton);
+        accountActions.setAlignment(Pos.CENTER_RIGHT);
+        VBox accountsCard = new VBox(12, accountsHeading, accountHelp, accountsTable, accountActions);
+        accountsCard.setId("admin-accounts");
+        accountsCard.getStyleClass().addAll("card", "account-card");
+        accountsCard.setEffect(createShadow());
 
         calculateButton.setOnAction(e -> {
             try {
@@ -381,6 +666,9 @@ public class LodgeBillingApp extends Application {
                 billCounter++;
                 String billId = String.format("B%03d", billCounter);
                 billList.add(new Bill(billId, guest, room, nights, total, paid, balance));
+                if (!persistRecords(stage, statusLabel)) {
+                    return;
+                }
                 billTable.getSelectionModel().selectLast();
                 setStatus(statusLabel, String.format("Saved %s · Total K %.2f · Balance K %.2f", billId, total, balance), true);
             } catch (IllegalArgumentException ex) {
@@ -400,6 +688,9 @@ public class LodgeBillingApp extends Application {
                 String reservationId = String.format("R%03d", reservationCounter);
                 reservationList.add(new Reservation(reservationId, guest, roomTypeBox.getValue(), checkIn.toString(),
                         nights, notesArea.getText().trim()));
+                if (!persistRecords(stage, statusLabel)) {
+                    return;
+                }
                 reservationTable.getSelectionModel().selectLast();
                 setStatus(statusLabel, "Reservation " + reservationId + " added and confirmed.", true);
             } catch (IllegalArgumentException ex) {
@@ -417,8 +708,20 @@ public class LodgeBillingApp extends Application {
             });
             return row;
         });
-        deleteBillButton.setOnAction(e -> billList.remove(billTable.getSelectionModel().getSelectedItem()));
-        deleteReservationButton.setOnAction(e -> reservationList.remove(reservationTable.getSelectionModel().getSelectedItem()));
+        deleteBillButton.setOnAction(e -> {
+            billList.remove(billTable.getSelectionModel().getSelectedItem());
+            persistRecords(stage, statusLabel);
+        });
+        deleteReservationButton.setOnAction(e -> {
+            reservationList.remove(reservationTable.getSelectionModel().getSelectedItem());
+            persistRecords(stage, statusLabel);
+        });
+        deleteAccountButton.setOnAction(e -> {
+            LocalUserStore.Account selected = accountsTable.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                deleteUserAccount(stage, selected, accountsTable, statusLabel);
+            }
+        });
         checkInButton.setOnAction(e -> {
             Reservation selected = reservationTable.getSelectionModel().getSelectedItem();
             if (selected == null) {
@@ -427,6 +730,9 @@ public class LodgeBillingApp extends Application {
             try {
                 selected.checkIn();
                 reservationTable.refresh();
+                if (!persistRecords(stage, statusLabel)) {
+                    return;
+                }
                 checkInButton.setDisable(true);
                 checkOutButton.setDisable(false);
                 setStatus(statusLabel, selected.getGuestName() + " checked in at " + selected.getCheckedInAt() + ".", true);
@@ -442,6 +748,9 @@ public class LodgeBillingApp extends Application {
             try {
                 selected.checkOut();
                 reservationTable.refresh();
+                if (!persistRecords(stage, statusLabel)) {
+                    return;
+                }
                 checkInButton.setDisable(true);
                 checkOutButton.setDisable(true);
                 setStatus(statusLabel, selected.getGuestName() + " checked out at " + selected.getCheckedOutAt() + ".", true);
@@ -460,7 +769,6 @@ public class LodgeBillingApp extends Application {
             notesArea.clear();
             setStatus(statusLabel, "Ready for a new guest.", true);
         });
-        logoutItem.setOnAction(e -> showLoginScreen(stage));
         aboutItem.setOnAction(e -> {
             Alert about = new Alert(Alert.AlertType.INFORMATION);
             about.initOwner(stage);
@@ -470,14 +778,37 @@ public class LodgeBillingApp extends Application {
             about.showAndWait();
         });
 
-        VBox contentArea = new VBox(16, headerBox, topSection, actionBox, billCard, reservationCard);
+        VBox contentArea = new VBox(16, headerBox, topSection, actionBox, billCard, reservationCard, accountsCard);
         contentArea.setPadding(new Insets(20));
+        billCard.setId("admin-bills");
+        reservationCard.setId("admin-reservations");
         ScrollPane scrollPane = new ScrollPane(contentArea);
         scrollPane.setFitToWidth(true);
         scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-        VBox mainLayout = new VBox(menuBar, scrollPane);
+        Button overviewLink = new Button("Overview & billing");
+        Button billsLink = new Button("Guest bills");
+        Button reservationsLink = new Button("Reservations");
+        Button accountsLink = new Button("Manage accounts");
+        overviewLink.getStyleClass().add("nav-button");
+        billsLink.getStyleClass().add("nav-button");
+        reservationsLink.getStyleClass().add("nav-button");
+        accountsLink.getStyleClass().add("nav-button");
+        overviewLink.setOnAction(e -> scrollToSection(scrollPane, contentArea, topSection));
+        billsLink.setOnAction(e -> scrollToSection(scrollPane, contentArea, billCard));
+        reservationsLink.setOnAction(e -> scrollToSection(scrollPane, contentArea, reservationCard));
+        accountsLink.setOnAction(e -> scrollToSection(scrollPane, contentArea, accountsCard));
+        Label navTitle = new Label("LODGE OPERATIONS");
+        navTitle.getStyleClass().add("nav-heading");
+        VBox navigation = new VBox(9, navTitle, overviewLink, billsLink, reservationsLink, accountsLink);
+        navigation.getStyleClass().add("dashboard-nav");
+        navigation.setPadding(new Insets(22, 12, 12, 12));
+        navigation.setMinWidth(190);
+        navigation.setMaxWidth(205);
+        HBox workspace = new HBox(navigation, scrollPane);
+        HBox.setHgrow(scrollPane, Priority.ALWAYS);
+        VBox mainLayout = new VBox(menuBar, workspace);
         mainLayout.getStyleClass().add("dashboard-shell");
-        VBox.setVgrow(scrollPane, Priority.ALWAYS);
+        VBox.setVgrow(workspace, Priority.ALWAYS);
 
         Scene mainScene = new Scene(mainLayout, 1120, 900);
         mainScene.getStylesheets().add(STYLESHEET);
@@ -485,6 +816,69 @@ public class LodgeBillingApp extends Application {
         stage.setMinHeight(700);
         stage.setScene(mainScene);
         stage.show();
+    }
+
+    private int countBillsForAccount(LocalUserStore.Account account) {
+        return Math.toIntExact(billList.stream()
+                .filter(bill -> belongsToAccount(bill.getGuestName(), account))
+                .count());
+    }
+
+    private int countReservationsForAccount(LocalUserStore.Account account) {
+        return Math.toIntExact(reservationList.stream()
+                .filter(reservation -> belongsToAccount(reservation.getGuestName(), account))
+                .count());
+    }
+
+    private void deleteUserAccount(Stage owner, LocalUserStore.Account account,
+                                   TableView<LocalUserStore.Account> accountsTable, Label statusLabel) {
+        int billCount = countBillsForAccount(account);
+        int reservationCount = countReservationsForAccount(account);
+        Alert confirmation = new Alert(AlertType.CONFIRMATION);
+        confirmation.initOwner(owner);
+        confirmation.setTitle("Delete guest account");
+        confirmation.setHeaderText("Permanently delete " + account.username() + "?");
+        confirmation.setContentText("This will also delete " + billCount + " bill(s) and "
+                + reservationCount + " reservation(s). This cannot be undone.");
+        ButtonType deleteButtonType = new ButtonType("Delete", ButtonBar.ButtonData.OK_DONE);
+        confirmation.getButtonTypes().setAll(deleteButtonType, ButtonType.CANCEL);
+        if (confirmation.showAndWait().orElse(ButtonType.CANCEL) != deleteButtonType) {
+            return;
+        }
+
+        List<Bill> previousBills = new ArrayList<>(billList);
+        List<Reservation> previousReservations = new ArrayList<>(reservationList);
+        billList.removeIf(bill -> belongsToAccount(bill.getGuestName(), account));
+        reservationList.removeIf(reservation -> belongsToAccount(reservation.getGuestName(), account));
+        if (!persistRecords(owner, statusLabel)) {
+            billList.setAll(previousBills);
+            reservationList.setAll(previousReservations);
+            setStatus(statusLabel, "Account was not deleted because its linked records could not be saved.", false);
+            return;
+        }
+
+        try {
+            userStore.deleteAccount(account.username());
+            accountsTable.getItems().remove(account);
+            setStatus(statusLabel, "Deleted account " + account.username() + " and its linked data.", true);
+        } catch (IOException | IllegalArgumentException ex) {
+            billList.setAll(previousBills);
+            reservationList.setAll(previousReservations);
+            boolean dataRestored = persistRecords(owner, statusLabel);
+            Alert error = new Alert(AlertType.ERROR);
+            error.initOwner(owner);
+            error.setTitle("Unable to delete account");
+            error.setHeaderText(dataRestored
+                    ? "The account was not deleted."
+                    : "The account was not deleted and its linked records could not be restored.");
+            error.setContentText(ex.getMessage());
+            error.showAndWait();
+        }
+    }
+
+    private boolean belongsToAccount(String guestName, LocalUserStore.Account account) {
+        return guestName != null && (guestName.equalsIgnoreCase(account.username())
+                || guestName.equalsIgnoreCase(account.legacyName()));
     }
 
     private String validatedGuest(TextField guestNameField) {
@@ -549,11 +943,11 @@ public class LodgeBillingApp extends Application {
         receiptDialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
         receiptDialog.getDialogPane().getStylesheets().add(STYLESHEET);
 
-        Label lodgeName = new Label("MUZU Lodge");
-        lodgeName.setStyle("-fx-font-size: 23px; -fx-font-weight: bold; -fx-text-fill: #173D27;");
+        HBox logo = createBrand(50);
+        logo.setAlignment(Pos.CENTER);
         Label subtitle = new Label("GUEST PAYMENT RECEIPT");
         subtitle.setStyle("-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #718174;");
-        VBox receiptHeader = new VBox(3, lodgeName, subtitle);
+        VBox receiptHeader = new VBox(3, logo, subtitle);
         receiptHeader.setAlignment(Pos.CENTER);
 
         VBox details = new VBox(10);
@@ -574,6 +968,7 @@ public class LodgeBillingApp extends Application {
         receipt.setPadding(new Insets(12));
         receipt.setPrefWidth(370);
         receiptDialog.getDialogPane().setContent(receipt);
+        receiptDialog.setOnHidden(event -> stopLogoRotation());
         receiptDialog.showAndWait();
     }
 
