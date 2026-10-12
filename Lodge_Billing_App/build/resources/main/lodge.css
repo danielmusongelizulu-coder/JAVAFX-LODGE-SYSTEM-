@@ -457,3 +457,30 @@
     -fx-font-size: 25px;
     -fx-font-weight: bold;
 }
+
+.auth-tabs .tab-header-area .tab-header-background {
+    -fx-background-color: transparent;
+}
+
+.auth-tabs .tab {
+    -fx-background-color: #e9f4eb;
+    -fx-background-radius: 9px 9px 0 0;
+    -fx-padding: 9px 12px;
+}
+
+.auth-tabs .tab .tab-label {
+    -fx-text-fill: #547866;
+    -fx-font-weight: bold;
+}
+
+.auth-tabs .tab:selected {
+    -fx-background-color: linear-gradient(to right, #176b4f, #16868a);
+}
+
+.auth-tabs .tab:selected .tab-label {
+    -fx-text-fill: #ffffff;
+}
+
+.auth-tabs .tab-content-area {
+    -fx-background-color: transparent;
+}
